@@ -30,17 +30,46 @@ interface SimulatedRoomBet {
   avatarLetter: string;
   stakeKes: number;
   cashoutAt: number | null;
+  cashedOutKes: number | null;
 }
 
-const ROOM_PLAYERS: Array<{ user: string; avatarBg: string; avatarLetter: string; baseStake: number; targetMult: number | null }> = [
-  { user: '2547***812', avatarBg: 'from-emerald-400 to-teal-700', avatarLetter: 'J', baseStake: 100, targetMult: 1.45 },
-  { user: '2547***109', avatarBg: 'from-amber-400 to-orange-600', avatarLetter: 'K', baseStake: 500, targetMult: 1.85 },
-  { user: '2541***443', avatarBg: 'from-sky-400 to-blue-700', avatarLetter: 'M', baseStake: 200, targetMult: 2.10 },
-  { user: '2547***920', avatarBg: 'from-rose-400 to-red-700', avatarLetter: 'B', baseStake: 50, targetMult: 1.32 },
-  { user: '2547***337', avatarBg: 'from-purple-400 to-indigo-700', avatarLetter: 'W', baseStake: 1000, targetMult: 1.60 },
-  { user: '2547***651', avatarBg: 'from-lime-400 to-emerald-700', avatarLetter: 'D', baseStake: 10, targetMult: 3.40 },
-  { user: '2541***778', avatarBg: 'from-cyan-400 to-blue-600', avatarLetter: 'S', baseStake: 250, targetMult: 1.95 },
-  { user: '2547***504', avatarBg: 'from-pink-400 to-rose-700', avatarLetter: 'N', baseStake: 100, targetMult: 2.50 },
+// A larger pool of "players" so different rounds show different faces.
+// Names use the anonymised Kenyan phone-number style. The letter is shown
+// inside the avatar; colors come from a fixed palette so they don't clash.
+const PLAYER_POOL: Array<{ user: string; avatarLetter: string }> = [
+  { user: '2547***812', avatarLetter: 'J' },
+  { user: '2547***109', avatarLetter: 'K' },
+  { user: '2541***443', avatarLetter: 'M' },
+  { user: '2547***920', avatarLetter: 'B' },
+  { user: '2547***337', avatarLetter: 'W' },
+  { user: '2547***651', avatarLetter: 'D' },
+  { user: '2541***778', avatarLetter: 'S' },
+  { user: '2547***504', avatarLetter: 'N' },
+  { user: '2547***221', avatarLetter: 'P' },
+  { user: '2541***069', avatarLetter: 'T' },
+  { user: '2547***883', avatarLetter: 'A' },
+  { user: '2547***615', avatarLetter: 'R' },
+  { user: '2541***302', avatarLetter: 'G' },
+  { user: '2547***774', avatarLetter: 'C' },
+  { user: '2547***058', avatarLetter: 'F' },
+  { user: '2541***991', avatarLetter: 'H' },
+  { user: '2547***440', avatarLetter: 'L' },
+  { user: '2547***236', avatarLetter: 'E' },
+];
+
+const AVATAR_COLORS = [
+  'from-emerald-400 to-teal-700',
+  'from-amber-400 to-orange-600',
+  'from-sky-400 to-blue-700',
+  'from-rose-400 to-red-700',
+  'from-purple-400 to-indigo-700',
+  'from-lime-400 to-emerald-700',
+  'from-cyan-400 to-blue-600',
+  'from-pink-400 to-rose-700',
+  'from-fuchsia-400 to-purple-700',
+  'from-violet-400 to-indigo-600',
+  'from-teal-400 to-emerald-700',
+  'from-orange-400 to-red-600',
 ];
 
 // Small deterministic hash so the PRNG has a seed derived from the round ID.
@@ -51,6 +80,31 @@ function hashString(input: string): number {
     h = Math.imul(h, 16777619);
   }
   return h >>> 0;
+}
+
+// Weighted stake picker — most players bet small, a few bet big.
+// Returns a "nice" round number so it looks typed-in, not generated.
+function pickStake(rand: () => number): number {
+  const r = rand();
+  let base: number;
+  if (r < 0.30) base = 10 + Math.floor(rand() * 5) * 10;      // 10..50
+  else if (r < 0.60) base = 50 + Math.floor(rand() * 10) * 10; // 50..140
+  else if (r < 0.82) base = 150 + Math.floor(rand() * 15) * 10; // 150..290
+  else if (r < 0.94) base = 300 + Math.floor(rand() * 20) * 50; // 300..1250
+  else base = 2000 + Math.floor(rand() * 16) * 500;             // 2000..9500
+  // Occasional .00 vs .50 endings (players often bet round numbers)
+  return rand() < 0.7 ? Math.round(base / 10) * 10 : base + 5;
+}
+
+// Weighted cashout-target picker — most players cash out early (1.2–2.2),
+// a few hold for higher multipliers, and a small slice misses (null = crash).
+function pickCashoutTarget(rand: () => number): number | null {
+  const r = rand();
+  if (r < 0.22) return null;                                    // ~22% crash out
+  if (r < 0.55) return Number((1.1 + rand() * 0.9).toFixed(2)); // 1.10..2.00
+  if (r < 0.80) return Number((2.0 + rand() * 1.5).toFixed(2)); // 2.00..3.50
+  if (r < 0.94) return Number((3.5 + rand() * 4.0).toFixed(2)); // 3.50..7.50
+  return Number((7.5 + rand() * 12).toFixed(2));                // 7.50..19.50
 }
 
 export const BetPanel: React.FC<BetPanelProps> = ({
@@ -68,17 +122,23 @@ export const BetPanel: React.FC<BetPanelProps> = ({
   const [showSecondPanel, setShowSecondPanel] = useState<boolean>(true);
   const [bottomFeedTab, setBottomFeedTab] = useState<'all' | 'previous' | 'top'>('all');
 
-  // Deterministic PRNG seeded by the round, so fake players get new
-  // cashout targets each round but consistent within the round.
-  const roundTargetsRef = useRef<{ roundId: string; targets: Array<number | null> }>({
-    roundId: '',
-    targets: [],
-  });
+  // Per-round simulated room state, generated once when the round changes.
+  // Seeded by round ID so every client sees the same fake players in the
+  // same order for a given round, but different rounds look completely different.
+  const roomRef = useRef<{
+    roundId: string;
+    bets: Array<{
+      user: string;
+      avatarLetter: string;
+      avatarBg: string;
+      stakeKes: number;
+      targetMult: number | null;
+    }>;
+  }>({ roundId: '', bets: [] });
 
   useEffect(() => {
-    if (roundTargetsRef.current.roundId === currentRound.id) return;
+    if (roomRef.current.roundId === currentRound.id) return;
 
-    // mulberry32-style seeded PRNG — same seed → same sequence
     let seed = hashString(currentRound.id || 'default');
     const rand = () => {
       seed = (seed + 0x6d2b79f5) | 0;
@@ -88,31 +148,33 @@ export const BetPanel: React.FC<BetPanelProps> = ({
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
 
-    const targets = ROOM_PLAYERS.map((p) => {
-      // ~25% of the time the player "crashes out" — no cashout
-      if (rand() < 0.25) return null;
+    // Pick a random subset of players (6–12 each round) and shuffle them.
+    const pool = [...PLAYER_POOL];
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    const count = 6 + Math.floor(rand() * 7); // 6..12
+    const picked = pool.slice(0, count);
 
-      // Base target from the player's baseline, plus randomness
-      const base = p.targetMult ?? 1.5;
-      // Vary ±40% and round to 2dp, clamp between 1.05 and 25
-      const variance = (rand() - 0.5) * 0.8;
-      const value = Math.max(1.05, Math.min(25, base * (1 + variance)));
-      return Number(value.toFixed(2));
+    const bets = picked.map((player) => {
+      const colorIdx = Math.floor(rand() * AVATAR_COLORS.length);
+      return {
+        user: player.user,
+        avatarLetter: player.avatarLetter,
+        avatarBg: AVATAR_COLORS[colorIdx],
+        stakeKes: pickStake(rand),
+        targetMult: pickCashoutTarget(rand),
+      };
     });
 
-    roundTargetsRef.current = { roundId: currentRound.id, targets };
+    roomRef.current = { roundId: currentRound.id, bets };
   }, [currentRound.id]);
 
   const liveRoomBets = useMemo<SimulatedRoomBet[]>(() => {
-    const targets = roundTargetsRef.current.targets;
-    return ROOM_PLAYERS.map((p, idx) => {
-      const target = targets[idx] ?? null;
-
-      // Deterministic stake variation per round
-      const seed = currentRound.nonce || 2048;
-      const factor = ((seed + idx * 7) % 3 === 0) ? 2 : 1;
-      const stakeKes = p.baseStake * factor;
-
+    const bets = roomRef.current.bets;
+    return bets.map((p, idx) => {
+      const target = p.targetMult;
       const cashed =
         target !== null && currentRound.status === 'in_flight' && multiplier >= target
           ? target
@@ -122,18 +184,20 @@ export const BetPanel: React.FC<BetPanelProps> = ({
           ? target
           : null;
 
+      const cashedOutKes = cashed !== null ? Number((p.stakeKes * cashed).toFixed(2)) : null;
+
       return {
         id: `${currentRound.id}_${idx}`,
         user: p.user,
         avatarBg: p.avatarBg,
         avatarLetter: p.avatarLetter,
-        stakeKes,
+        stakeKes: p.stakeKes,
         cashoutAt: cashed,
+        cashedOutKes,
       };
     });
   }, [
     currentRound.id,
-    currentRound.nonce,
     currentRound.status,
     currentRound.crashMultiplier,
     multiplier,
@@ -178,9 +242,9 @@ export const BetPanel: React.FC<BetPanelProps> = ({
         )}
       </div>
 
-      {/* Bottom All Bets / Previous / Top Feed Section (Matching bottom of Screenshot 2) */}
+      {/* Bottom All Bets / Previous / Top Feed Section */}
       <div className="bg-[#1b1c20] rounded-2xl p-3 border border-white/5 flex flex-col gap-2.5">
-        {/* Segmented Pill Tabs: All Bets | Previous | Top */}
+        {/* Segmented Pill Tabs */}
         <div className="bg-[#121316] rounded-full p-0.5 grid grid-cols-3 border border-white/5 max-w-md mx-auto w-full">
           <button
             type="button"
@@ -290,7 +354,7 @@ export const BetPanel: React.FC<BetPanelProps> = ({
                     )}
                   </div>
                   <span className="col-span-2 text-right font-mono font-bold text-emerald-400 tabular-nums">
-                    {rb.cashoutAt ? (rb.stakeKes * rb.cashoutAt).toFixed(2) : '-'}
+                    {rb.cashedOutKes !== null ? rb.cashedOutKes.toFixed(2) : '-'}
                   </span>
                 </div>
               ))}
@@ -480,7 +544,7 @@ const SingleBetSlip: React.FC<SingleBetSlipProps> = ({
       <div className="grid grid-cols-12 gap-2.5 items-stretch">
         {/* Left Column (5 cols): Stake Stepper + 2x2 Preset Pills */}
         <div className="col-span-5 flex flex-col justify-between gap-1.5">
-          {/* Pill Stepper: (-) 10.00 (+) */}
+          {/* Pill Stepper */}
           <div className="bg-[#0e0f12] border border-white/10 rounded-full px-1.5 py-1 flex items-center justify-between">
             <button
               type="button"
@@ -518,7 +582,7 @@ const SingleBetSlip: React.FC<SingleBetSlipProps> = ({
             </button>
           </div>
 
-          {/* 2x2 Quick Amount Pills: 100, 200, 500, 10,000 */}
+          {/* 2x2 Quick Amount Pills */}
           <div className="grid grid-cols-2 gap-1.5">
             {PRESET_AMOUNTS.map((item) => (
               <button
@@ -599,7 +663,7 @@ const SingleBetSlip: React.FC<SingleBetSlipProps> = ({
         </div>
       </div>
 
-      {/* Auto Cashout Row (Shown when "Auto" tab is selected) */}
+      {/* Auto Cashout Row */}
       {mode === 'auto' && (
         <div className="pt-2 border-t border-white/5 flex items-center justify-between text-xs text-slate-300">
           <label className="flex items-center gap-2 cursor-pointer">
