@@ -258,48 +258,55 @@ export default function App() {
       });
 
       eventSource.addEventListener('round_crashed', (e: MessageEvent) => {
-        try {
-          const data = JSON.parse(e.data);
-          setCurrentRound((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  status: 'crashed',
-                  crashMultiplier: data.crashMultiplier,
-                  serverSeedRevealed: data.serverSeedRevealed,
-                }
-              : null
-          );
-          setMultiplier(data.crashMultiplier);
-          playTone(180, 'sawtooth', 0.35, 0.12);
+  try {
+    const data = JSON.parse(e.data);
 
-          setActiveBets((prev) => {
-            const next = new Map(prev);
-            for (const [panel, bet] of next.entries()) {
-              if (bet.status === 'placed') {
-                next.set(panel, { ...bet, status: 'crashed' });
-              }
-            }
-            return next;
-          });
+    // Payload is a PastRound object: { id, multiplier, serverSeed,
+    // serverSeedHash, clientSeed, nonce, endedAt }
+    setRoundHistory((prev) => {
+      if (!data?.id) return prev;
+      if (prev.some((r) => r.id === data.id)) return prev; // dedupe
+      return [
+        {
+          id: data.id,
+          multiplier: Number(data.multiplier),
+          serverSeed: data.serverSeed,
+          serverSeedHash: data.serverSeedHash,
+          clientSeed: data.clientSeed ?? '',
+          nonce: Number(data.nonce ?? 0),
+          endedAt: data.endedAt ?? new Date().toISOString(),
+        },
+        ...prev.slice(0, 49),
+      ];
+    });
 
-          setRoundHistory((prev) => [
-            {
-              id: data.roundId,
-              multiplier: data.crashMultiplier,
-              serverSeed: data.serverSeedRevealed,
-              serverSeedHash: data.serverSeedHash,
-              clientSeed: data.clientSeed ?? '',
-              nonce: data.nonce ?? 0,
-              endedAt: new Date().toISOString(),
-            },
-            ...prev.slice(0, 49),
-          ]);
-        } catch {
-          // ignore
+    setMultiplier(Number(data.multiplier));
+    playTone(180, 'sawtooth', 0.35, 0.12);
+
+    setActiveBets((prev) => {
+      const next = new Map(prev);
+      for (const [panel, bet] of next.entries()) {
+        if (bet.status === 'placed') {
+          next.set(panel, { ...bet, status: 'crashed' });
         }
-      });
+      }
+      return next;
+    });
 
+    setCurrentRound((prev) =>
+      prev
+        ? {
+            ...prev,
+            status: 'crashed',
+            crashMultiplier: Number(data.multiplier),
+            serverSeedRevealed: data.serverSeed,
+          }
+        : null
+    );
+  } catch {
+    // ignore
+  }
+});
       eventSource.addEventListener('round_waiting', (e: MessageEvent) => {
         try {
           const data = JSON.parse(e.data);

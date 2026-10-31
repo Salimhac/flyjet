@@ -952,12 +952,12 @@ app.get("/api/game/events", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
-  const keepalive = setInterval(() => {
-  if (!closed) res.write(': keepalive\n\n');
-}, 15000);
-
   let closed = false;
   let previous: any = null;
+
+  const keepalive = setInterval(() => {
+    if (!closed) res.write(': keepalive\n\n');
+  }, 15000);
 
   const sendState = async () => {
     if (closed) return;
@@ -971,23 +971,45 @@ app.get("/api/game/events", async (req, res) => {
         const before = previous.currentRound;
         const after = state.currentRound;
 
-        if (before?.id !== after?.id && after?.status === "waiting") {
-          writeSse(res, "round_waiting", {
+        // 1. New crash? Compare newest crashed round ID from history.
+        const prevCrashId = previous.history?.[0]?.id;
+        const newCrashId = state.history?.[0]?.id;
+        if (newCrashId && newCrashId !== prevCrashId) {
+          writeSse(res, "round_crashed", state.history[0]);
+        }
+
+        // 2. Round transitions.
+        if (before?.id !== after?.id) {
+          if (after?.status === "waiting") {
+            writeSse(res, "round_waiting", {
+              roundId: after.id,
+              serverSeedHash: after.serverSeedHash,
+              clientSeed: after.clientSeed,
+              nonce: after.nonce,
+              countdown: state.countdown,
+            });
+          } else if (after?.status === "in_flight") {
+            writeSse(res, "round_started", {
+              roundId: after.id,
+              serverSeedHash: after.serverSeedHash,
+              clientSeed: after.clientSeed,
+              nonce: after.nonce,
+            });
+          }
+        } else if (before?.status === "waiting" && after?.status === "in_flight") {
+          writeSse(res, "round_started", {
             roundId: after.id,
             serverSeedHash: after.serverSeedHash,
-            countdown: state.countdown
+            clientSeed: after.clientSeed,
+            nonce: after.nonce,
           });
-        } else if (before?.id === after?.id && before?.status === "waiting" && after?.status === "in_flight") {
-          writeSse(res, "round_started", after);
-        } else if (before?.id === after?.id && before?.status === "in_flight" && after?.status === "crashed") {
-          writeSse(res, "round_crashed", state.history[0]);
         }
 
         writeSse(res, "multiplier_tick", {
           status: after?.status || "waiting",
           roundId: after?.id,
           multiplier: state.currentMultiplier,
-          countdown: state.countdown
+          countdown: state.countdown,
         });
       }
 
@@ -1003,9 +1025,9 @@ app.get("/api/game/events", async (req, res) => {
   req.on("close", () => {
     closed = true;
     clearInterval(poll);
+    clearInterval(keepalive);
   });
 });
-
 
 app.get("/api/game/state", async (_req, res) => {
   try {
