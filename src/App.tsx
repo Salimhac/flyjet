@@ -173,6 +173,7 @@ export default function App() {
     let eventSource: EventSource | null = null;
     let reconnectAttempt = 0;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastCrashAt = 0;
 
     async function bootstrap() {
       try {
@@ -216,6 +217,7 @@ export default function App() {
         try {
           const data = JSON.parse(e.data);
           if (data.status === 'waiting') {
+             if (Date.now() - lastCrashAt < 2000) return;
             if (typeof data.countdown === 'number') setCountdown(data.countdown);
             setMultiplier(1.0);
             setCurrentRound((prev) =>
@@ -242,6 +244,7 @@ export default function App() {
 
       eventSource.addEventListener('round_started', (e: MessageEvent) => {
         try {
+          if (Date.now() - lastCrashAt < 2000) return;
           const data = JSON.parse(e.data);
           setCurrentRound({
             id: data.roundId,
@@ -260,7 +263,7 @@ export default function App() {
       eventSource.addEventListener('round_crashed', (e: MessageEvent) => {
   try {
     const data = JSON.parse(e.data);
-
+    lastCrashAt = Date.now();
     // Payload is a PastRound object: { id, multiplier, serverSeed,
     // serverSeedHash, clientSeed, nonce, endedAt }
     setRoundHistory((prev) => {
@@ -309,6 +312,7 @@ export default function App() {
 });
       eventSource.addEventListener('round_waiting', (e: MessageEvent) => {
         try {
+           if (Date.now() - lastCrashAt < 2000) return;
           const data = JSON.parse(e.data);
           setCurrentRound({
             id: data.roundId,

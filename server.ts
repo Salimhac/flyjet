@@ -753,6 +753,8 @@ async function createRoundIfNeeded() {
   if (existing) return existing;
 
   // Avoid creating a new round immediately after a crash.
+  // 2800ms gives the SSE stream time to deliver `round_crashed` to
+  // connected clients before the next `waiting` round appears.
   const { data: latest, error: latestError } = await db
     .from("game_rounds")
     .select("ended_at")
@@ -765,7 +767,7 @@ async function createRoundIfNeeded() {
 
   if (
     latest?.ended_at &&
-    Date.now() - new Date(latest.ended_at).getTime() < 1500
+    Date.now() - new Date(latest.ended_at).getTime() < 2800
   ) {
     return null;
   }
@@ -800,7 +802,6 @@ async function createRoundIfNeeded() {
 
   return data as RoundRow;
 }
-
 async function settleCashout(bet: any, multiplier: number) {
   try {
     const result: any = await rpc("cashout_bet", {
