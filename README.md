@@ -1,20 +1,12 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# FlyJet
 
-# Run and deploy your AI Studio app
+A Kenya-focused crash-betting game built with React, Vite, Express, and Supabase.  
+KES wallet, Paystack M-Pesa/Airtel deposits, provably-fair crash rounds, and server-authoritative game state.
 
-This contains everything you need to run your app locally.
+---
 
-View your app in AI Studio: https://ai.studio/apps/cb408f80-3448-459b-b11e-fd69bfa8cba7
+## Prerequisites
 
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- **Node.js** 20.6+ (LTS recommended; the dev script uses `--env-file`)
+- A **Supabase** project (for auth, wallet, bets, and game rounds)
+- A **Paystack** account (for deposits; test mode is fine for local dev)
