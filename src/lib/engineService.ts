@@ -8,6 +8,9 @@ import {
 } from "../types";
 import { supabase } from "./supabase";
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
+
 // -----------------------------------------------------------------------------
 // API HELPERS
 // -----------------------------------------------------------------------------
@@ -39,8 +42,8 @@ async function safeApiFetch<T = any>(
     headers.set("Authorization", `Bearer ${session.access_token}`);
   }
 
-  const response = await fetch(url, {
-    ...options,
+  const response = await fetch(`${API_BASE}${url}`, { 
+       ...options,
     headers,
   });
 

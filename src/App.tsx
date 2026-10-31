@@ -25,6 +25,9 @@ import { Volume2, VolumeX } from 'lucide-react';
 import { LigiBigiGame } from './features/virtuals/LigiBigiGame';
 import { PenaltyShootoutGame } from './features/virtuals/PenaltyShootoutGame';
 
+// Base URL for the backend API (Render in production, empty → same origin locally).
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(() => {
     try {
@@ -173,7 +176,7 @@ export default function App() {
 
     async function bootstrap() {
       try {
-        const res = await fetch('/api/game/state');
+        const res = await fetch(`${API_BASE}/api/game/state`);
         if (!res.ok) throw new Error(`state ${res.status}`);
         const data = await res.json();
         if (cancelled) return;
@@ -189,7 +192,7 @@ export default function App() {
     function connect() {
       if (cancelled) return;
       eventSource?.close();
-      eventSource = new EventSource('/api/game/events');
+      eventSource = new EventSource(`${API_BASE}/api/game/events`);
 
       eventSource.addEventListener('open', () => {
         reconnectAttempt = 0;
