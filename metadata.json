@@ -1,0 +1,6 @@
+{
+  "name": "Betika Aviator Kenya",
+  "description": "Production-ready, real-money Aviator crash gaming platform for the Kenyan market featuring Paystack payments, 18+ verification, and provably fair engine.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
