@@ -952,6 +952,10 @@ app.get("/api/game/events", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
+  const keepalive = setInterval(() => {
+  if (!closed) res.write(': keepalive\n\n');
+}, 15000);
+
   let closed = false;
   let previous: any = null;
 
