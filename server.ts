@@ -728,9 +728,12 @@ async function getGameState() {
     const endAt = new Date(round.created_at).getTime() + WAIT_SECONDS * 1000;
     countdown = Math.max(0, Number(((endAt - Date.now()) / 1000).toFixed(1)));
   } else if (round?.status === "in_flight" && round.started_at) {
-    const elapsed = (Date.now() - new Date(round.started_at).getTime()) / 1000;
-    multiplier = multiplierAtElapsedSeconds(elapsed);
-  }
+  const elapsed = (Date.now() - new Date(round.started_at).getTime()) / 1000;
+  const live = multiplierAtElapsedSeconds(elapsed);
+  // Cap at the round's stored crash multiplier so the SSE stream never
+  // advertises a value above the point where the round will crash.
+  multiplier = Math.min(live, Number(round.crash_multiplier));
+}
 
   return {
     currentRound: round
