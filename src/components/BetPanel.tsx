@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ActiveBet, GameRound, PastRound, Wallet } from '../types';
 import { Minus, Plus, SquareMinus, SquarePlus, AlertCircle } from 'lucide-react';
 
@@ -43,6 +43,16 @@ const ROOM_PLAYERS: Array<{ user: string; avatarBg: string; avatarLetter: string
   { user: '2547***504', avatarBg: 'from-pink-400 to-rose-700', avatarLetter: 'N', baseStake: 100, targetMult: 2.50 },
 ];
 
+// Small deterministic hash so the PRNG has a seed derived from the round ID.
+function hashString(input: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
 export const BetPanel: React.FC<BetPanelProps> = ({
   wallet,
   currentRound,
@@ -58,18 +68,60 @@ export const BetPanel: React.FC<BetPanelProps> = ({
   const [showSecondPanel, setShowSecondPanel] = useState<boolean>(true);
   const [bottomFeedTab, setBottomFeedTab] = useState<'all' | 'previous' | 'top'>('all');
 
+  // Deterministic PRNG seeded by the round, so fake players get new
+  // cashout targets each round but consistent within the round.
+  const roundTargetsRef = useRef<{ roundId: string; targets: Array<number | null> }>({
+    roundId: '',
+    targets: [],
+  });
+
+  useEffect(() => {
+    if (roundTargetsRef.current.roundId === currentRound.id) return;
+
+    // mulberry32-style seeded PRNG — same seed → same sequence
+    let seed = hashString(currentRound.id || 'default');
+    const rand = () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = seed;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+
+    const targets = ROOM_PLAYERS.map((p) => {
+      // ~25% of the time the player "crashes out" — no cashout
+      if (rand() < 0.25) return null;
+
+      // Base target from the player's baseline, plus randomness
+      const base = p.targetMult ?? 1.5;
+      // Vary ±40% and round to 2dp, clamp between 1.05 and 25
+      const variance = (rand() - 0.5) * 0.8;
+      const value = Math.max(1.05, Math.min(25, base * (1 + variance)));
+      return Number(value.toFixed(2));
+    });
+
+    roundTargetsRef.current = { roundId: currentRound.id, targets };
+  }, [currentRound.id]);
+
   const liveRoomBets = useMemo<SimulatedRoomBet[]>(() => {
-    const seed = currentRound.nonce || 2048;
+    const targets = roundTargetsRef.current.targets;
     return ROOM_PLAYERS.map((p, idx) => {
+      const target = targets[idx] ?? null;
+
+      // Deterministic stake variation per round
+      const seed = currentRound.nonce || 2048;
       const factor = ((seed + idx * 7) % 3 === 0) ? 2 : 1;
       const stakeKes = p.baseStake * factor;
-      const target = p.targetMult ? Number((p.targetMult + ((seed + idx) % 5) * 0.12).toFixed(2)) : null;
+
       const cashed =
-        currentRound.status === 'in_flight' && target && multiplier >= target
+        target !== null && currentRound.status === 'in_flight' && multiplier >= target
           ? target
-          : currentRound.status === 'crashed' && target && (currentRound.crashMultiplier ?? 1) >= target
+          : target !== null &&
+            currentRound.status === 'crashed' &&
+            (currentRound.crashMultiplier ?? 1) >= target
           ? target
           : null;
+
       return {
         id: `${currentRound.id}_${idx}`,
         user: p.user,
@@ -79,7 +131,13 @@ export const BetPanel: React.FC<BetPanelProps> = ({
         cashoutAt: cashed,
       };
     });
-  }, [currentRound.id, currentRound.nonce, currentRound.status, currentRound.crashMultiplier, multiplier]);
+  }, [
+    currentRound.id,
+    currentRound.nonce,
+    currentRound.status,
+    currentRound.crashMultiplier,
+    multiplier,
+  ]);
 
   return (
     <div className="w-full flex flex-col gap-2.5">
@@ -245,7 +303,7 @@ export const BetPanel: React.FC<BetPanelProps> = ({
             <div className="flex items-center justify-between px-2 py-1 text-xs text-slate-400">
               <span>Previous Round Result</span>
               <span className="font-mono font-bold text-rose-400">
-                {roundHistory[0] ? `${roundHistory[0].multiplier.toFixed(2)}x` : '1.42x'}
+                {roundHistory[0] ? `${roundHistory[0].multiplier.toFixed(2)}x` : '—'}
               </span>
             </div>
             <div className="flex flex-wrap gap-1.5 px-2 py-1">
