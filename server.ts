@@ -30,6 +30,28 @@ const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: false, autoRefreshToken: false }
 });
 
+// -----------------------------------------------------------------------------
+// CORS — allow the Netlify frontend to call this backend
+// Registered before body parsers and routes so OPTIONS preflight and CORS
+// headers apply to every request (including the Paystack webhook).
+// -----------------------------------------------------------------------------
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && (ALLOWED_ORIGINS.includes(origin) || ALLOWED_ORIGINS.length === 0)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  res.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Vary', 'Origin');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 app.use("/api/paystack/webhook", express.raw({ type: "application/json" }));
 app.use(express.json({ limit: "1mb" }));
 
@@ -979,6 +1001,7 @@ app.get("/api/game/events", async (req, res) => {
     clearInterval(poll);
   });
 });
+
 
 app.get("/api/game/state", async (_req, res) => {
   try {
